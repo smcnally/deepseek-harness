@@ -32,6 +32,8 @@ export interface ComposerKeymapHandlers {
   dismissPopup(): void
   /** Whether Enter may submit right now (locked/busy states refuse). */
   canSubmit(): boolean
+  /** Whether plain Enter inserts a line break instead of submitting. */
+  lineBreakOnEnter(): boolean
   /** The Enter gesture after every guard passed; `accelerated` = Ctrl/Cmd held. */
   submit(accelerated: boolean): void
   /** Pasted files (image intake). */
@@ -137,10 +139,14 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
         event?.preventDefault()
         return true
       }
+      const accelerated = event?.ctrlKey === true || event?.metaKey === true
+      // Newline-Enter: plain Enter is a native line break (like Shift+Enter);
+      // the accelerated chord stays the submit gesture.
+      if (!accelerated && handlers.lineBreakOnEnter()) return false
       event?.preventDefault()
       if (event?.repeat === true) return true // held-down Enter must not machine-gun sends
       if (!handlers.canSubmit()) return true
-      handlers.submit(event?.ctrlKey === true || event?.metaKey === true)
+      handlers.submit(accelerated)
       return true
     }, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(PASTE_COMMAND, (event) => {

@@ -319,6 +319,11 @@ export interface ComposerBarInjected {
      * and the primary Send button use while the addressed agent is busy.
      */
     busyEnter: ObservableSnapshot<BusyEnterBehavior>
+    /**
+     * Live newline-Enter preference: when true, plain Enter inserts a line
+     * break and the Cmd/Ctrl-accelerated chord is the submit gesture.
+     */
+    newlineEnter: ObservableSnapshot<boolean>
     /** Live per-draft upload states for file-kind drafts. */
     fileUploads: ObservableSnapshot<DraftFileUploads>
     notices: ObservableSnapshot<InputNotice | null>

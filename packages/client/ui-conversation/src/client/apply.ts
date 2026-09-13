@@ -147,8 +147,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     order: 20,
     locale: NS,
     inject: (): EnterBehaviorRowInjected => ({
-      hooks: { busyEnter: submissionPolicy.busyEnter },
+      hooks: { busyEnter: submissionPolicy.busyEnter, newlineEnter: submissionPolicy.newlineEnter },
       setBusyEnter: (behavior) => { submissionPolicy.setBusyEnter(behavior) },
+      setNewlineEnter: (enabled) => { submissionPolicy.setNewlineEnter(enabled) },
     }),
   }, EnterBehaviorRow))
 
@@ -341,6 +342,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           command: undefined,
           hooks: {
             busyEnter: submissionPolicy.busyEnter,
+            newlineEnter: submissionPolicy.newlineEnter,
             fileUploads: ABSENT_FILE_UPLOADS,
             notices: ABSENT_NOTICES,
             lexicon: ABSENT_LEXICON,
@@ -399,6 +401,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         },
         hooks: {
           busyEnter: submissionPolicy.busyEnter,
+          newlineEnter: submissionPolicy.newlineEnter,
           fileUploads: conversation.fileUploads,
           notices: shell.notices,
           lexicon: shell.lexicon,

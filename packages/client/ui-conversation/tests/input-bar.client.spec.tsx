@@ -98,6 +98,7 @@ interface BenchOptions {
   addFiles?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
+  newlineEnter?: boolean
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
 }
 
@@ -152,6 +153,7 @@ function bench(over?: BenchOptions) {
   const removeAttachment = vi.fn((id: DraftAttachmentId) => { shell.removeAttachment(id) })
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
   const busyEnter = createSnapshotStore<'queue' | 'steer'>(over?.busyEnter ?? 'queue')
+  const newlineEnter = createSnapshotStore<boolean>(over?.newlineEnter ?? false)
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, owner })
@@ -197,6 +199,7 @@ function bench(over?: BenchOptions) {
     }),
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
     useBusyEnter: bindSnapshotSelector(busyEnter),
+    useNewlineEnter: bindSnapshotSelector(newlineEnter),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
@@ -240,7 +243,7 @@ function bench(over?: BenchOptions) {
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
     view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeAttachment, slotCalls,
-    menuLauncher, busyEnter,
+    menuLauncher, busyEnter, newlineEnter,
     steerQueue: over?.steerQueue,
     get placeholder() { return placeholderOf(view.container) },
     get inputDisabled() { return textarea.getAttribute('aria-disabled') === 'true' },
@@ -614,6 +617,24 @@ describe('Enter semantics', () => {
     const busyMeta = bench({ running: true, draft: 'steer with cmd' })
     fireEvent.keyDown(busyMeta.textarea, { key: 'Enter', metaKey: true })
     expect(busyMeta.sink).toHaveBeenCalledWith('steer with cmd', [], 'steer', expect.any(AbortSignal))
+  })
+
+  it('newline-Enter inserts a line break and moves submission to Cmd/Ctrl+Enter', () => {
+    const idle = bench({ draft: 'line one', newlineEnter: true })
+    fireEvent.keyDown(idle.textarea, { key: 'Enter' })
+    expect(idle.sink).not.toHaveBeenCalled()
+    fireEvent.keyDown(idle.textarea, { key: 'Enter', metaKey: true })
+    expect(idle.sink).toHaveBeenCalledWith('line one', [], 'queue', expect.any(AbortSignal))
+
+    const busy = bench({ running: true, busyEnter: 'steer', draft: 'steer now', newlineEnter: true })
+    fireEvent.keyDown(busy.textarea, { key: 'Enter', ctrlKey: true })
+    expect(busy.sink).toHaveBeenCalledWith('steer now', [], 'steer', expect.any(AbortSignal))
+  })
+
+  it('newline-Enter leaves the Send button as the primary submit', () => {
+    const { button, sink } = bench({ draft: 'button send', newlineEnter: true })
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('button send', [], 'queue', expect.any(AbortSignal))
   })
 
   it('empty-draft Cmd/Ctrl+Enter steers the whole queue instead of submitting', () => {

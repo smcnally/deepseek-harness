@@ -267,6 +267,7 @@ function mount(
           resolveDraftAttachments={() => []}
           toggleCommandMenu={vi.fn()}
           useBusyEnter={bindSnapshotSelector(createSnapshotStore<'queue' | 'steer'>('queue'))}
+          useNewlineEnter={bindSnapshotSelector(createSnapshotStore(false))}
           useNotices={bindSnapshotSelector(wiring.notices)}
           useLexicon={bindSnapshotSelector(wiring.lexicon)}
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}

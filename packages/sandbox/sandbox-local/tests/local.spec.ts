@@ -252,6 +252,28 @@ describe('the platform chains', () => {
     expect(probeLandlock).toHaveBeenCalledTimes(1)
   })
 
+  it('re-probes after the cooldown so a transient negative verdict cannot disable confinement', async () => {
+    let usable = false
+    const probeBwrap = vi.fn(() => usable)
+    const probeLandlock = vi.fn(() => 'unusable' as const)
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock, unavailableRetryMs: 0 })
+    expect(() => sandbox.confine(['true'], RO)).toThrow(SandboxUnavailableError)
+    usable = true
+    const confined = sandbox.confine(['true'], RO)
+    expect(confined.argv[0]).toBe('bwrap')
+    expect(probeBwrap).toHaveBeenCalledTimes(2)
+  })
+
+  it('holds the negative verdict for the cooldown window instead of probing per command', async () => {
+    const probeBwrap = vi.fn(() => false)
+    const probeLandlock = vi.fn(() => 'unusable' as const)
+    const { sandbox } = await setup({}, { platform: 'linux', probeBwrap, probeLandlock, unavailableRetryMs: 60_000 })
+    expect(() => sandbox.confine(['true'], RO)).toThrow(SandboxUnavailableError)
+    expect(() => sandbox.confine(['true'], RO)).toThrow(SandboxUnavailableError)
+    expect(probeBwrap).toHaveBeenCalledTimes(1)
+    expect(probeLandlock).toHaveBeenCalledTimes(1)
+  })
+
   it('a multi-rung chain probes a seatbelt rung like any other (the walk, not the platform table, decides)', async () => {
     // The product chains reach seatbelt only as darwin's sole (unprobed)
     // candidate; the probe chain exercises the path it would take in

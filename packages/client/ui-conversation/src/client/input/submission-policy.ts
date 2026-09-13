@@ -10,10 +10,12 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {
   BusyEnterBehavior, ComposerSubmitGesture, InputSubmitMode,
 } from '../contract/composer-submission.ts'
-import { BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+import {
+  BUSY_ENTER_FIELD, DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_NEWLINE_ENTER, NEWLINE_ENTER_FIELD,
+} from '../../submission-settings.ts'
 import type { ConversationSettings } from '../../submission-settings.ts'
 
-export { DEFAULT_BUSY_ENTER_BEHAVIOR } from '../../submission-settings.ts'
+export { DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_NEWLINE_ENTER } from '../../submission-settings.ts'
 
 /**
  * Resolve one submission gesture against the busy-Enter preference. Plain
@@ -46,6 +48,8 @@ export function resolveSubmitMode(
 export class ComposerSubmissionPolicy {
   /** Reactive preference source for the composer bar and the Settings row. */
   readonly busyEnter: SnapshotStore<BusyEnterBehavior> = createSnapshotStore(DEFAULT_BUSY_ENTER_BEHAVIOR)
+  /** Reactive newline-Enter preference for the composer bar and the Settings row. */
+  readonly newlineEnter: SnapshotStore<boolean> = createSnapshotStore(DEFAULT_NEWLINE_ENTER)
   private readonly host: SettingsScope<ConversationSettings> | undefined
 
   /**
@@ -74,12 +78,24 @@ export class ComposerSubmissionPolicy {
   }
 
   /**
+   * Change whether plain Enter inserts a newline; the live value publishes
+   * before the durable write starts.
+   * @param enabled - true makes plain Enter a line break and Cmd/Ctrl+Enter the submit gesture.
+   */
+  setNewlineEnter(enabled: boolean): void {
+    if (this.newlineEnter.getSnapshot() === enabled) return
+    this.newlineEnter.set(enabled)
+    void this.host?.set(NEWLINE_ENTER_FIELD, enabled)
+  }
+
+  /**
    * Adopt the scope's accepted durable behavior without writing it back.
    * @param host - the constructor-narrowed scope driving this adoption.
    */
   private adopt(host: SettingsScope<ConversationSettings>): void {
     const section = host.getSnapshot().value
-    if (section === undefined || this.busyEnter.getSnapshot() === section.busyEnter) return
-    this.busyEnter.set(section.busyEnter)
+    if (section === undefined) return
+    if (this.busyEnter.getSnapshot() !== section.busyEnter) this.busyEnter.set(section.busyEnter)
+    if (this.newlineEnter.getSnapshot() !== section.newlineEnter) this.newlineEnter.set(section.newlineEnter)
   }
 }

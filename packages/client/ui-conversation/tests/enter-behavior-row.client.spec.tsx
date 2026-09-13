@@ -39,6 +39,7 @@ function noPendingInteraction() {
 function mount() {
   const policy = new ComposerSubmissionPolicy()
   const setBusyEnter = vi.fn((behavior: 'queue' | 'steer') => { policy.setBusyEnter(behavior) })
+  const setNewlineEnter = vi.fn((enabled: boolean) => { policy.setNewlineEnter(enabled) })
   const props: EnterBehaviorRowProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     useSessions: emptySessions(),
@@ -46,11 +47,13 @@ function mount() {
     useResource,
     useWorkspaces: emptyWorkspaces(),
     useBusyEnter: bindSnapshotSelector(policy.busyEnter),
+    useNewlineEnter: bindSnapshotSelector(policy.newlineEnter),
     setBusyEnter,
+    setNewlineEnter,
     t: makeTranslate(en),
   }
   render(<EnterBehaviorRow {...props} />)
-  return { policy, setBusyEnter }
+  return { policy, setBusyEnter, setNewlineEnter }
 }
 
 describe('EnterBehaviorRow', () => {
@@ -75,5 +78,13 @@ describe('EnterBehaviorRow', () => {
     expect(screen.getByRole('menuitem', { name: 'Steer' })).toBeDefined()
     fireEvent.pointerDown(document.body)
     expect(screen.queryByRole('menuitem', { name: 'Steer' })).toBeNull()
+  })
+
+  it('offers the newline-Enter choice and reports it', () => {
+    const b = mount()
+    expect(screen.getByText('Enter key')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: /Enter sends/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Enter inserts a newline' }))
+    expect(b.setNewlineEnter).toHaveBeenCalledWith(true)
   })
 })

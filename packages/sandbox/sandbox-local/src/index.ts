@@ -135,6 +135,12 @@ export interface SandboxInternals {
   probeWindowsAcl?: () => boolean
   /** Replaces the private-temp-directory removal at provider dispose (a throwing fake exercises the cleanup-failure path). */
   rmTempDir?: (path: string) => void
+  /**
+   * Replaces the negative-verdict re-probe cooldown in ms (0 re-probes on the
+   * next confined call). Without a cooldown a single transient probe failure
+   * would disable confinement for the provider's whole lifetime.
+   */
+  unavailableRetryMs?: number
 }
 
 /** The chain's verdict: which runner confines, and how completely it enforces. */
@@ -185,6 +191,15 @@ const STATIC_ENFORCEMENT: Record<SelectedRunner['runner'], SandboxEnforcement> =
   // ACL-addressable surface but must not advertise the absolute promise.
   'windows-acl': 'partial',
 }
+
+/**
+ * How long a cached NEGATIVE chain verdict stands before the next confined
+ * call re-probes. A transient probe failure (resource exhaustion, a probe
+ * timeout) must not disable confinement for the provider's whole lifetime,
+ * while a genuinely runnerless host still re-probes at most once per window
+ * instead of paying a probe on every command.
+ */
+const UNAVAILABLE_RETRY_MS = 30_000
 
 /**
  * A probe bound must be a positive finite number: Node treats
@@ -241,7 +256,8 @@ const RUNNER_FAILURE_RULES = {
 
 /**
  * Local process-sandbox provider. Registers as `ctx.sandbox`. Caches the
- * chain verdict and, on the windows-acl rung, the write grants
+ * chain verdict (re-probing a negative one after a cooldown) and, on the
+ * windows-acl rung, the write grants
  * ({@link AclWriteGrant}: the standing workspace-root grant per workspace
  * and the revocable private-temp grant per live session/workspace pair, the
  * latter revoked on provider dispose); the one-time probes spawn nothing
@@ -263,6 +279,8 @@ export class LocalSandboxProvider extends SandboxProvider {
   private readonly probeTimeoutMs: number
   /** Cached chain verdict; undefined until the first confined wrap needs it. */
   private selectedRunner: SelectedRunner | 'unavailable' | undefined
+  /** Earliest time the next confined call may re-probe a negative chain verdict. */
+  private nextReprobeAt = 0
   /**
    * Server-lifetime write grants (windows-acl rung): the STANDING
    * workspace-root grant per workspace (its ACE is the cross-session reuse
@@ -483,14 +501,23 @@ export class LocalSandboxProvider extends SandboxProvider {
   }
 
   /**
-   * Resolve which runner confines commands, once, for the provider's
-   * lifetime: this platform's chain ({@link PLATFORM_CHAINS}), its sole
-   * candidate selected directly, multiple candidates arbitrated by
-   * functional probes in chain order. Fail closed when the platform has no
-   * chain or no candidate passes — the command never runs.
+   * Resolve which runner confines commands: this platform's chain
+   * ({@link PLATFORM_CHAINS}), its sole candidate selected directly, multiple
+   * candidates arbitrated by functional probes in chain order. A positive
+   * verdict is cached for the provider's lifetime; a negative one is re-probed
+   * after the cooldown. Fail closed when the platform has no chain or no
+   * candidate passes — the command never runs.
    */
   private selectRunner(mode: ConfinedSandboxMode): SelectedRunner {
-    this.selectedRunner ??= this.chainVerdict()
+    const retryMs = this.internals.unavailableRetryMs ?? UNAVAILABLE_RETRY_MS
+    // A negative verdict is only good for the cooldown: the host may have been
+    // transiently unable to answer the probe, and a permanently cached
+    // "unavailable" would turn one bad probe into a lifetime without bash.
+    if (this.selectedRunner === undefined
+      || (this.selectedRunner === 'unavailable' && Date.now() >= this.nextReprobeAt)) {
+      this.selectedRunner = this.chainVerdict()
+      this.nextReprobeAt = Date.now() + retryMs
+    }
     if (this.selectedRunner === 'unavailable') throw new SandboxUnavailableError(mode)
     return this.selectedRunner
   }
