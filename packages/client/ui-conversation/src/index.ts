@@ -10,18 +10,22 @@ import { ConversationSettingsFields } from './submission-settings.ts'
 
 export {
   BUSY_ENTER_BEHAVIORS, BUSY_ENTER_FIELD, CONVERSATION_SETTINGS_NAMESPACE,
-  DEFAULT_BUSY_ENTER_BEHAVIOR, type BusyEnterBehavior, type ConversationSettings,
+  DEFAULT_BUSY_ENTER_BEHAVIOR, DEFAULT_NEWLINE_ENTER, NEWLINE_ENTER_FIELD,
+  type BusyEnterBehavior, type ConversationSettings,
 } from './submission-settings.ts'
 
 /** Runtime preferences projected to the browser. */
 export interface Config {
   /** Enter key behavior while a turn is running. */
   busyEnter: Volatile<BusyEnterBehavior>
+  /** Whether plain Enter inserts a newline instead of submitting. */
+  newlineEnter: Volatile<boolean>
 }
 
 /** Live preferences projected to the browser. */
 export const Config = z.object({
   [BUSY_ENTER_FIELD]: ConversationSettingsFields[BUSY_ENTER_FIELD].volatile(),
+  newlineEnter: ConversationSettingsFields['newlineEnter'].volatile(),
 })
 
 /** Host preferences are consumed through the configuration form projection.

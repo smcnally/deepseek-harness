@@ -24,7 +24,7 @@ describe('keymap keydown routing', () => {
     editor.setRootElement(first)
     const unregister = registerComposerKeymap(editor, {
       arbitrate: () => 'pass', space: () => false, dismissPopup: () => {},
-      canSubmit: () => false, submit: () => {}, intakeFiles: () => {}, pasteText: () => {},
+      canSubmit: () => false, lineBreakOnEnter: () => false, submit: () => {}, intakeFiles: () => {}, pasteText: () => {},
     })
     onTestFinished(unregister)
     fireEvent.compositionStart(first)
@@ -57,6 +57,7 @@ describe('keymap keydown routing', () => {
       space: () => false,
       dismissPopup: () => {},
       canSubmit: () => true,
+      lineBreakOnEnter: () => false,
       submit,
       intakeFiles: () => {},
       pasteText: () => {},
@@ -83,6 +84,7 @@ describe('keymap keydown routing', () => {
       space: () => false,
       dismissPopup: () => {},
       canSubmit: () => true,
+      lineBreakOnEnter: () => false,
       submit: () => {},
       intakeFiles: () => {},
       pasteText: () => {},
@@ -98,5 +100,29 @@ describe('keymap keydown routing', () => {
     // Shift+Tab is the menu's exit key, never its settle key.
     fireEvent.keyDown(root, { key: 'Tab', keyCode: 9, shiftKey: true })
     expect(arbitrate).toHaveBeenLastCalledWith('tabBack', false)
+  })
+
+  it('lets plain Enter insert a newline when the handler asks for it', () => {
+    const editor = createEditor({ namespace: 'keymap-newline', onError: (e) => { throw e } })
+    const root = document.createElement('div')
+    root.contentEditable = 'true'
+    document.body.appendChild(root)
+    editor.setRootElement(root)
+    registerPlainText(editor)
+    const submit = vi.fn()
+    registerComposerKeymap(editor, {
+      arbitrate: () => 'pass',
+      space: () => false,
+      dismissPopup: () => {},
+      canSubmit: () => true,
+      lineBreakOnEnter: () => true,
+      submit,
+      intakeFiles: () => {},
+      pasteText: () => {},
+    })
+    fireEvent.keyDown(root, { key: 'Enter' })
+    expect(submit).not.toHaveBeenCalled()
+    fireEvent.keyDown(root, { key: 'Enter', metaKey: true })
+    expect(submit).toHaveBeenCalledWith(true)
   })
 })

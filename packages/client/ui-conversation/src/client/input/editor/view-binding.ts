@@ -14,6 +14,7 @@ interface DraftViewGate {
   running: boolean
   steeringAvailable: boolean
   busyEnter: BusyEnterBehavior
+  newlineEnter: boolean
   intakeFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void
   uploadsPending: boolean
   showToast: (text: string) => void
@@ -116,6 +117,7 @@ export function installDraftKeymap(
     },
     dismissPopup: () => { keyboard.dismissPopup() },
     canSubmit: () => !gate.current.locked && !gate.current.machineBusy,
+    lineBreakOnEnter: () => gate.current.newlineEnter,
     submit: (accelerated) => {
       const g = gate.current
       // Empty-draft accelerated Enter acts on the queue instead of the
@@ -129,10 +131,13 @@ export function installDraftKeymap(
         g.showToast(g.t('file.stillUploading'))
         return
       }
+      // Newline-Enter makes the accelerated chord the primary submit
+      // gesture, so it mirrors the Send button instead of the opposite
+      // busy behavior.
       keyboard.submit(resolveSubmitMode(
         g.busyEnter,
         g.running,
-        accelerated ? 'accelerated' : 'enter',
+        accelerated && !g.newlineEnter ? 'accelerated' : 'enter',
         g.steeringAvailable,
       ))
     },

@@ -19,7 +19,12 @@ export default defineConfig(({ env }) => {
     workspace: client
       ? ['vendor/*', 'packages/*/*', 'apps/cli']
       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop', 'apps/desktop-host'],
-    entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
+    // Deliberately no `entry`: each workspace package now declares its own
+    // bundle in a package-local tsdown.config.ts, and this object remains the
+    // shared defaults (outDir/format/target/plugins) those configs inherit. The
+    // former `lib/types/{index,invariant,startup}.js` entry was inherited by the
+    // private workspace root, which owns no `lib/types` output, so its entry
+    // resolved to nothing and aborted the entire workspace build.
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
