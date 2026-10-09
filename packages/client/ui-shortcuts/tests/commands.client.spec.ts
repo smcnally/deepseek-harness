@@ -36,9 +36,13 @@ describe('assembled shortcut command owners', () => {
     const ownedRows = () => shortcuts.catalog.getSnapshot().filter(row => ownerIds.includes(row.id))
     expect(ownedRows().map(row => row.id).sort()).toEqual(ownerIds)
     expect(ownedRows().filter(row => row.keys.length > 0).map(row => row.id)).toEqual(['shortcuts.open'])
-    const conversationIds = ['fixed.send', 'fixed.newline', 'fixed.complementary', 'fixed.slash', 'fixed.mention', 'response.stop']
+    const conversationIds = ['fixed.slash', 'fixed.mention', 'response.stop']
+    const enterIds = ['conversation.send', 'conversation.newline', 'conversation.complementary']
     const fixedIds = () => shortcuts.fixedCatalog.getSnapshot().map(row => row.id)
+    const enterRows = () => shortcuts.catalog.getSnapshot().filter(row => enterIds.includes(row.id))
     expect(fixedIds()).toEqual(expect.arrayContaining(conversationIds))
+    expect(enterRows().map(row => row.id).sort()).toEqual([...enterIds].sort())
+    expect(enterRows().every(row => row.group === 'input')).toBe(true)
     expect(shortcuts.fixedCatalog.getSnapshot().find(row => row.id === 'response.stop'))
       .toMatchObject({ group: 'input', keys: ['Esc', 'Esc'] })
     await client.unload('@deepseek-ai/dsh-client-ui-shortcuts')
@@ -46,6 +50,7 @@ describe('assembled shortcut command owners', () => {
     expect(fixedIds()).not.toContain('fixed.move')
     await client.unload('@deepseek-ai/dsh-client-ui-conversation')
     for (const id of conversationIds) expect(fixedIds()).not.toContain(id)
+    expect(enterRows()).toEqual([])
     for (const owner of ['ui-settings-general', 'ui-layout']) await client.unload(`@deepseek-ai/dsh-client-${owner}`)
     expect(ownedRows()).toEqual([])
     expect(shortcuts.fixedCatalog.getSnapshot().some(row => row.id.startsWith('fixed.'))).toBe(false)

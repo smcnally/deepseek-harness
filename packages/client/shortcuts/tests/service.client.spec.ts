@@ -155,6 +155,23 @@ it.each(['resolve', 'reject'] as const)('suppresses %s completions after disposa
   expect(f.unsubscribe).toHaveBeenCalledOnce()
 })
 
+it('describes a candidate under the delivery rule of the command being recorded', async () => {
+  const { service } = mount()
+  await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })
+  const local = 'conversation.newline' as ShortcutCommandId
+  const off = service.register({ ...command, id: local, local: true, regions: [], defaults: {
+    'web:macos': { code: 'Enter', modifiers: [] },
+    'web:windows': { code: 'Enter', modifiers: [] },
+    'web:linux': { code: 'Enter', modifiers: [] },
+  } })
+  expect(service.describeBinding({ code: 'Enter', modifiers: [] }, local).issue).toBeNull()
+  expect(service.describeBinding({ code: 'Enter', modifiers: ['alt'] }, local).issue).toBeNull()
+  // The same candidates keep the global rules for a command this registry dispatches.
+  expect(service.describeBinding({ code: 'Enter', modifiers: [] }).issue).toBe('modifier-required')
+  expect(service.describeBinding({ code: 'Enter', modifiers: ['alt'] }).issue).toBe('unsupported-browser')
+  off()
+})
+
 it('persists Web edits and presents normalized bindings through the public service', async () => {
   const { service, ctx } = mount()
   await vi.waitFor(() => { expect(service.config.getSnapshot().status).toBe('ready') })

@@ -14,9 +14,16 @@ export interface ShortcutDefinition {
   readonly defaults: Readonly<Partial<Record<ShortcutProfile, ShortcutBinding>>>
   /** Fixed actions reserve one or more combinations instead of exposing an editable default. */
   readonly fixed?: readonly [ShortcutBinding, ...ShortcutBinding[]]
+  /**
+   * Whether the owning editor receives this command's Enter combination
+   * directly instead of the registry dispatching it. Local commands are
+   * confined to Enter and exempt from the browser allowlist and the
+   * editing-reserved rules, because a focused editor delivers those keys.
+   */
+  readonly local?: boolean
 }
 /** Validation failures select localized copy in the UI. */
-export type BindingIssue = 'reserved' | 'unsupported-browser' | 'modifier-required' | 'unsupported-key'
+export type BindingIssue = 'reserved' | 'unsupported-browser' | 'modifier-required' | 'unsupported-key' | 'enter-only'
 /** A conflicting row keeps its requested binding visible but cannot execute it. */
 export interface EffectiveShortcut {
   readonly id: ShortcutCommandId
@@ -91,9 +98,14 @@ export function parseShortcutDocument(raw: string | null): ShortcutDocument | 'i
  * @param binding - normalized candidate.
  * @param runtime - receiving application shell.
  * @param platform - receiving device.
+ * @param local - whether an owning editor receives the combination while it has focus.
  * @returns the rejection reason, or null when this combination is allowed.
  */
-export function bindingIssue(binding: NormalizedBinding, runtime: ShortcutRuntime, platform: ShortcutPlatform): BindingIssue | null {
+export function bindingIssue(binding: NormalizedBinding, runtime: ShortcutRuntime, platform: ShortcutPlatform,
+  local = false): BindingIssue | null {
+  // A focused editor delivers Enter itself, so the global chord reservations
+  // do not apply; no other code is reachable for a local command.
+  if (local) return binding.code === 'Enter' && binding.secondCode === undefined ? null : 'enter-only'
   const { code, modifiers } = binding
   if (runtime === 'desktop' && (platform === 'windows' || platform === 'macos')) return null
   if (binding.secondCode !== undefined) return 'unsupported-key'
@@ -136,11 +148,11 @@ export function effectiveShortcuts(definitions: readonly ShortcutDefinition[], d
   runtime: ShortcutRuntime, platform: ShortcutPlatform): readonly EffectiveShortcut[] {
   const overrides = document.profiles[`${runtime}:${platform}`] ?? {}
   const fixed = definitions.flatMap(row => row.fixed?.map(binding => ({ id: row.id, binding: normalizeBinding(binding, platform) })) ?? [])
-  const rows = definitions.filter(row => row.fixed === undefined).map(({ id, defaults }) => {
+  const rows = definitions.filter(row => row.fixed === undefined).map(({ id, defaults, local }) => {
     const modified = Object.hasOwn(overrides, id)
     const candidate = modified ? overrides[id] : resolveShortcutDefault({ id, defaults }, runtime, platform)
     const binding = candidate == null ? null : normalizeBinding(candidate, platform)
-    return { id, binding, modified, issue: binding === null ? null : bindingIssue(binding, runtime, platform) }
+    return { id, binding, modified, issue: binding === null ? null : bindingIssue(binding, runtime, platform, local === true) }
   })
   return rows.map((row) => {
     const binding = row.binding
@@ -214,10 +226,12 @@ export function parseShortcutDefinitions(value: unknown): readonly ShortcutDefin
   const ids = new Set<string>()
   for (const entry of value) {
     if (!record(entry) || typeof entry.id !== 'string' || !commandPattern.test(entry.id) || ids.has(entry.id)
-      || !record(entry.defaults) || Object.keys(entry).some(key => key !== 'id' && key !== 'defaults' && key !== 'fixed')) throw new Error('Invalid shortcut definition')
+      || !record(entry.defaults) || Object.keys(entry).some(key => key !== 'id' && key !== 'defaults' && key !== 'fixed' && key !== 'local')
+      || (entry.local !== undefined && typeof entry.local !== 'boolean')) throw new Error('Invalid shortcut definition')
     ids.add(entry.id)
     if (Object.hasOwn(entry, 'fixed')) {
-      if (!Array.isArray(entry.fixed) || entry.fixed.length === 0 || Object.keys(entry.defaults).length > 0) throw new Error('Invalid fixed shortcut definition')
+      if (!Array.isArray(entry.fixed) || entry.fixed.length === 0 || Object.keys(entry.defaults).length > 0
+        || entry.local === true) throw new Error('Invalid fixed shortcut definition')
       for (const binding of entry.fixed) if (parseBinding(binding) === null) throw new Error('Invalid fixed shortcut binding')
     }
     for (const [profile, candidate] of Object.entries(entry.defaults)) {
@@ -235,7 +249,7 @@ export function parseShortcutDefinitions(value: unknown): readonly ShortcutDefin
         if (binding === undefined) continue
         const normalized = normalizeBinding(binding, platform)
         if (bindings.some(other => overlappingBindings(other, normalized))
-          || bindingIssue(normalized, runtime, platform) !== null) throw new Error('Conflicting or reserved shortcut default')
+          || bindingIssue(normalized, runtime, platform, entry.local === true) !== null) throw new Error('Conflicting or reserved shortcut default')
         bindings.push(normalized)
       }
     }

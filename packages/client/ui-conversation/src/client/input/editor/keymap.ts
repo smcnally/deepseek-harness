@@ -20,7 +20,7 @@ import {
   KEY_ESCAPE_COMMAND, KEY_SPACE_COMMAND, KEY_TAB_COMMAND, PASTE_COMMAND,
 } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
-import type { ArbitrateKey, ArbitrateOutcome } from '../../contract/draft-editor.ts'
+import type { ArbitrateKey, ArbitrateOutcome, ComposerEnterAction } from '../../contract/draft-editor.ts'
 
 /** The bar-supplied behavior behind each intercepted gesture. */
 export interface ComposerKeymapHandlers {
@@ -32,6 +32,12 @@ export interface ComposerKeymapHandlers {
   dismissPopup(): void
   /** Whether Enter may submit right now (locked/busy states refuse). */
   canSubmit(): boolean
+  /**
+   * Resolve one Enter combination against the composer's live Message input bindings.
+   * @param modifiers - expanded physical modifiers in normalized order.
+   * @returns the selected action, or null when no binding claims the combination.
+   */
+  enterAction(modifiers: readonly ('control' | 'alt' | 'shift' | 'meta')[]): ComposerEnterAction | null
   /** Plain Enter submits; exactly Ctrl+Enter or Cmd+Enter selects accelerated delivery. */
   submit(accelerated: boolean): void
   /**
@@ -49,6 +55,12 @@ function isComposingEvent(event: KeyboardEvent, recentlyComposing: () => boolean
   // keyCode 229 is the legacy IME-composition signal engines emit without isComposing.
   // oxlint-disable-next-line typescript/no-deprecated
   return event.isComposing || event.keyCode === 229 || recentlyComposing()
+}
+
+/** Expanded physical modifiers of one keydown, in normalized keycap order. */
+function enterModifiers(event: KeyboardEvent): readonly ('control' | 'alt' | 'shift' | 'meta')[] {
+  return (['control', 'alt', 'shift', 'meta'] as const).filter(value => ({ control: event.ctrlKey,
+    alt: event.altKey, shift: event.shiftKey, meta: event.metaKey })[value])
 }
 
 /**
@@ -133,12 +145,17 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
       return false
     }, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(KEY_ENTER_COMMAND, (event) => {
-      // Returning true stops Lexical's fallback line break without consuming
-      // the DOM event that application shortcuts need.
-      if (event !== null && (event.altKey || event.getModifierState('AltGraph')
-        || (event.ctrlKey && event.metaKey) || (event.shiftKey && (event.ctrlKey || event.metaKey)))) return true
-      // Plain Shift+Enter keeps its native line break, including during composition.
-      if (event?.shiftKey === true) return false
+      // AltGraph composes characters, so the composer never claims it.
+      if (event !== null && event.getModifierState('AltGraph')) return true
+      // The configured bindings select the gesture; a programmatic dispatch
+      // without an event keeps the submit gesture.
+      const action = event === null ? 'submit' : handlers.enterAction(enterModifiers(event))
+      // The line-break binding keeps its native break, including during composition.
+      if (action === 'newline') return false
+      // An unclaimed Enter neither submits nor breaks the line. Returning true
+      // stops Lexical's fallback line break without consuming the DOM event
+      // that application shortcuts need.
+      if (action === null) return true
       if (event !== null && isComposingEvent(event, recentlyComposing)) {
         // The IME consumes this Enter (candidate pick); neither submit nor
         // break the line. No preventDefault: the browser owns the gesture.
@@ -153,7 +170,7 @@ export function registerComposerKeymap(editor: LexicalEditor, handlers: Composer
       event?.preventDefault()
       if (event?.repeat === true) return true // held-down Enter must not machine-gun sends
       if (!handlers.canSubmit()) return true
-      handlers.submit(event?.ctrlKey === true || event?.metaKey === true)
+      handlers.submit(action === 'accelerated')
       return true
     }, COMMAND_PRIORITY_CRITICAL),
     editor.registerCommand(PASTE_COMMAND, (event) => {

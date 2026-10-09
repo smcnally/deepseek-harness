@@ -4,6 +4,8 @@ import type { BindingIssue, NormalizedBinding, ShortcutConfigSnapshot, ShortcutE
 
 /** Local input owner resolved before an application command. */
 export type ShortcutRegion = 'page' | 'editable' | 'terminal'
+/** Reference section a row renders under in the shortcut reference. */
+export type ShortcutGroup = 'application' | 'input' | 'menus' | 'approval'
 /** Synchronous DOM context; owners capture business targets in resolve(). */
 export interface ShortcutContext {
   readonly source?: 'keyboard' | 'menu' | 'iframe' | 'webview'
@@ -23,6 +25,14 @@ export interface ShortcutCommand {
   readonly aliases: readonly string[]
   readonly defaults: Readonly<Partial<Record<ShortcutProfile, ShortcutBinding>>>
   readonly regions: readonly ShortcutRegion[]
+  /** Reference section this command renders under; absent means the application section. */
+  readonly group?: ShortcutGroup
+  /**
+   * Whether the owning editor receives this command's Enter combination while
+   * it has focus. A local command declares no dispatch region, and the
+   * registry only resolves, stores, and reverts its binding.
+   */
+  readonly local?: boolean
   /**
    * Allowed modal identifiers for Web/Linux keyboard input and explicit menu actions;
    * Windows/macOS Desktop keyboard bindings take priority.
@@ -35,6 +45,8 @@ export interface ShortcutCatalogEntry {
   readonly id: ShortcutCommandId
   readonly label: string
   readonly aliases: readonly string[]
+  /** Reference section this row renders under. @default 'application' */
+  readonly group?: ShortcutGroup
   readonly keys: readonly string[]
   readonly aria: string | undefined
   readonly binding: NormalizedBinding | null
@@ -69,7 +81,7 @@ export interface ShortcutFixedCommand {
   readonly keys: readonly string[]
   /** One or more physical combinations reserved by this action, including individual steps of a sequence. */
   readonly bindings: readonly [ShortcutBinding, ...ShortcutBinding[]]
-  readonly group: 'application' | 'input' | 'menus' | 'approval'
+  readonly group: ShortcutGroup
 }
 /** Localized fixed-action row; its key sequence is not an editable binding. */
 export interface ShortcutFixedCatalogEntry {
@@ -102,9 +114,10 @@ export interface Shortcuts {
   /**
    * Describe a candidate using the device's physical-key and reservation rules; invalid codes throw.
    * @param binding - candidate combination, or null for an unbound command.
+   * @param command - registered owner whose local delivery rule applies to the candidate.
    * @returns canonical binding, visible keys, rejection reason, and overlapping editable/fixed command IDs.
    */
-  describeBinding(binding: ShortcutBinding | null): {
+  describeBinding(binding: ShortcutBinding | null, command?: ShortcutCommandId): {
     binding: NormalizedBinding | null
     keys: readonly string[]
     issue: BindingIssue | null

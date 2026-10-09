@@ -17,7 +17,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ComposerBlock } from './composer-blocks.ts'
 import type { DraftAttachmentId, InputActions, InputNotice, InputState } from './input.ts'
-import type { ComposerKeyboard, DraftSnapshot, EditSelection } from './draft-editor.ts'
+import type { ComposerEnterGesture, ComposerKeyboard, DraftSnapshot, EditSelection } from './draft-editor.ts'
 import type { createConversationStore } from '../stores.ts'
 import type { BusyEnterBehavior } from './composer-submission.ts'
 import type { ConversationSnapshot } from './snapshot.ts'
@@ -398,6 +398,11 @@ export interface ComposerBarInjected {
      * and the primary Send button use while the addressed agent is busy.
      */
     busyEnter: ObservableSnapshot<BusyEnterBehavior>
+    /**
+     * Live Message input bindings: the Enter combinations that submit, request
+     * accelerated delivery, or insert a line break while the editor has focus.
+     */
+    enterGestures: ObservableSnapshot<readonly ComposerEnterGesture[]>
     /** Live per-draft upload states for file-kind drafts. */
     fileUploads: ObservableSnapshot<DraftFileUploads>
     notices: ObservableSnapshot<InputNotice | null>

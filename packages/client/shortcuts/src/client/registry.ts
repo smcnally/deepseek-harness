@@ -38,8 +38,9 @@ export class ShortcutRegistry {
    * @returns definitions without callbacks or localized labels.
    */
   definitions(): readonly ShortcutDefinition[] {
-    return [...[...this.commands.values()].map(({ id, defaults }) => ({ id, defaults })),
-      ...[...this.fixedCommands.values()].map(({ id, bindings }) => ({ id, defaults: {}, fixed: bindings }))]
+    return [...[...this.commands.values()].map(({ id, defaults, local }) =>
+      ({ id, defaults, ...(local === true ? { local: true } : {}) })),
+    ...[...this.fixedCommands.values()].map(({ id, bindings }) => ({ id, defaults: {}, fixed: bindings }))]
   }
 
   /**
@@ -57,6 +58,15 @@ export class ShortcutRegistry {
       this.fixedCommands.delete(command.id)
       this.refreshLabels()
     }
+  }
+
+  /**
+   * Whether a registered command receives its keys from its owning editor rather than this registry.
+   * @param id - registered product command.
+   * @returns true for a local command; false when the command is unknown or dispatched here.
+   */
+  isLocal(id: ShortcutCommandId): boolean {
+    return this.commands.get(id)?.local === true
   }
 
   private refreshFixedLabels(): void {
@@ -83,15 +93,17 @@ export class ShortcutRegistry {
    */
   register(command: ShortcutCommand): () => void {
     if (this.commands.has(command.id) || this.fixedCommands.has(command.id)) throw new Error(`Duplicate shortcut command: ${command.id}`)
+    const local = command.local === true
+    if (local && command.regions.length > 0) throw new Error(`Local shortcut command must declare no dispatch region: ${command.id}`)
     for (const runtime of ['desktop', 'web'] as const) {
       for (const platform of ['macos', 'windows', 'linux'] as const) {
         const candidate = resolveShortcutDefault(command, runtime, platform)
         if (candidate === undefined) continue
         const binding = normalizeBinding(candidate, platform)
-        if (runtime === 'web' && !isWebBindingAllowed(binding, platform)) {
+        if (!local && runtime === 'web' && !isWebBindingAllowed(binding, platform)) {
           throw new Error(`Unsupported Web shortcut: ${command.id}`)
         }
-        if (bindingIssue(binding, runtime, platform) !== null) throw new Error(`Reserved shortcut default: ${command.id}`)
+        if (bindingIssue(binding, runtime, platform, local) !== null) throw new Error(`Reserved shortcut default: ${command.id}`)
         for (const existing of this.commands.values()) {
           const other = resolveShortcutDefault(existing, runtime, platform)
           if (other !== undefined && overlappingBindings(binding, normalizeBinding(other, platform))) {
@@ -120,11 +132,12 @@ export class ShortcutRegistry {
     const catalog = rows.map((row) => {
       const command = this.commands.get(row.id) as ShortcutCommand
       const enabled = config.status !== 'loading' && row.issue === null && row.conflicts.length === 0
-      if (enabled && row.binding !== null) this.bindings.set(bindingKey(row.binding), command)
+      // A local command's keys reach its owning editor, never this dispatch map.
+      if (enabled && row.binding !== null && command.local !== true) this.bindings.set(bindingKey(row.binding), command)
       if (config.status !== 'loading' && row.issue === null && row.conflicts.length > 0 && row.binding !== null) {
         this.conflicts.set(bindingKey(row.binding), command)
       }
-      return { ...row, label: command.label(), aliases: command.aliases,
+      return { ...row, label: command.label(), aliases: command.aliases, group: command.group ?? 'application',
         ...presentBinding(row.binding, this.platform),
         aria: enabled ? presentBinding(row.binding, this.platform).aria : undefined }
     })

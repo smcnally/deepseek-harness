@@ -6,9 +6,17 @@
  */
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { fireEvent } from '@testing-library/react'
-import { $createParagraphNode, $createTextNode, $getRoot, createEditor } from 'lexical'
+import { $createParagraphNode, $createTextNode, $getRoot, KEY_ENTER_COMMAND, createEditor } from 'lexical'
 import { registerPlainText } from '@lexical/plain-text'
 import { registerComposerKeymap } from '../src/client/input/editor/keymap.ts'
+
+/** The composer's built-in Enter gestures, mirrored for direct keymap registration. */
+const enterAction = (modifiers: readonly ('control' | 'alt' | 'shift' | 'meta')[]) => {
+  const combination = modifiers.join('+')
+  return combination === '' ? 'submit' as const
+    : combination === 'shift' ? 'newline' as const
+      : combination === 'control' || combination === 'meta' ? 'accelerated' as const : null
+}
 
 describe('keymap keydown routing', () => {
   it('clears composition presentation on root swaps and unregisters pending callbacks', async () => {
@@ -23,7 +31,7 @@ describe('keymap keydown routing', () => {
     })
     editor.setRootElement(first)
     const unregister = registerComposerKeymap(editor, {
-      arbitrate: () => 'pass', space: () => false, dismissPopup: () => {},
+      arbitrate: () => 'pass', space: () => false, dismissPopup: () => {}, enterAction,
       canSubmit: () => false, submit: () => {}, intakeFiles: () => {}, pasteText: () => {},
     })
     onTestFinished(unregister)
@@ -55,7 +63,7 @@ describe('keymap keydown routing', () => {
     registerComposerKeymap(editor, {
       arbitrate: () => 'pass',
       space: () => false,
-      dismissPopup: () => {},
+      dismissPopup: () => {}, enterAction,
       canSubmit: () => true,
       submit,
       intakeFiles: () => {},
@@ -86,7 +94,7 @@ describe('keymap keydown routing', () => {
     const submit = vi.fn()
     const arbitrate = vi.fn(() => 'pass' as const)
     onTestFinished(registerComposerKeymap(editor, {
-      arbitrate, space: () => false, dismissPopup: () => {}, canSubmit: () => true,
+      arbitrate, space: () => false, dismissPopup: () => {}, enterAction, canSubmit: () => true,
       submit, intakeFiles: () => {}, pasteText: () => {},
     }))
     editor.update(() => {
@@ -123,7 +131,7 @@ describe('keymap keydown routing', () => {
     registerComposerKeymap(editor, {
       arbitrate,
       space: () => false,
-      dismissPopup: () => {},
+      dismissPopup: () => {}, enterAction,
       canSubmit: () => true,
       submit: () => {},
       intakeFiles: () => {},
@@ -140,5 +148,44 @@ describe('keymap keydown routing', () => {
     // Shift+Tab is the menu's exit key, never its settle key.
     fireEvent.keyDown(root, { key: 'Tab', keyCode: 9, shiftKey: true })
     expect(arbitrate).toHaveBeenLastCalledWith('tabBack', false)
+  })
+})
+
+describe('Enter gestures resolved from the live bindings', () => {
+  const mount = (enterAction: Parameters<typeof registerComposerKeymap>[1]['enterAction']) => {
+    const editor = createEditor({ namespace: 'bound-enter', onError: (error) => { throw error } })
+    const root = document.createElement('div')
+    root.contentEditable = 'true'
+    document.body.appendChild(root)
+    onTestFinished(() => { editor.setRootElement(null); root.remove() })
+    editor.setRootElement(root)
+    onTestFinished(registerPlainText(editor))
+    const submit = vi.fn()
+    onTestFinished(registerComposerKeymap(editor, {
+      arbitrate: () => 'pass', space: () => false, dismissPopup: () => {}, canSubmit: () => true,
+      submit, intakeFiles: () => {}, pasteText: () => {}, enterAction,
+    }))
+    return { editor, root, submit }
+  }
+
+  it('delegates the line-break binding and submits where the binding says submit', () => {
+    const { editor, submit } = mount(modifiers => modifiers.length === 0 ? 'newline' : 'submit')
+    // dispatchCommand answers whether the composer claimed the gesture.
+    expect(editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(false)
+    expect(submit).not.toHaveBeenCalled()
+    expect(editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))).toBe(true)
+    expect(submit).toHaveBeenCalledWith(false)
+  })
+
+  it('consumes an unbound Enter without submitting', () => {
+    const { editor, submit } = mount(() => null)
+    expect(editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(true)
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('claims a modified Enter that a binding names', () => {
+    const { editor, submit } = mount(modifiers => modifiers.includes('alt') ? 'submit' : null)
+    expect(editor.dispatchCommand(KEY_ENTER_COMMAND, new KeyboardEvent('keydown', { key: 'Enter', altKey: true }))).toBe(true)
+    expect(submit).toHaveBeenCalledWith(false)
   })
 })

@@ -135,7 +135,7 @@ export function ShortcutReference({
     ...catalog.map(row => ({
       ...row,
       names: [...row.aliases, row.keys.filter(key => key !== '+').join('+'), row.keys.filter(key => key !== '+').join(''), row.aria ?? '', row.aria?.replace('Meta', 'Cmd') ?? ''],
-      group: 'application' as const,
+      group: row.group ?? 'application',
     })),
     ...fixedCatalog.map(row => ({ ...row, names: [row.id, row.keys.join(' ')] })),
   ].sort((left, right) => Number(left.id === 'response.stop') - Number(right.id === 'response.stop')

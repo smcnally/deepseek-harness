@@ -40,6 +40,16 @@ export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape' | 'tab' | 'tabBack
 /** Trigger-menu keyboard routing result. */
 export type ArbitrateOutcome = 'consumed' | 'pick-highlighted' | 'pass'
 
+/** Composer action one Enter-family binding selects. */
+export type ComposerEnterAction = 'submit' | 'accelerated' | 'newline'
+
+/** One resolved Enter binding: the exact expanded modifiers that select a composer action. */
+export interface ComposerEnterGesture {
+  readonly action: ComposerEnterAction
+  /** Expanded physical modifiers in normalized (control, alt, shift, meta) order. */
+  readonly modifiers: readonly ('control' | 'alt' | 'shift' | 'meta')[]
+}
+
 /**
  * The InputBar-exclusive keyboard/DOM command face: synchronous
  * returns and event-handler semantics that must not enter the public provide

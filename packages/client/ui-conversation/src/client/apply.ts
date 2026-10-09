@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { ShortcutBinding, ShortcutCommandId, ShortcutFixedCommand } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { UiConversation } from './conversation/assembly.ts'
 import type { ViewTab } from './contract/views.ts'
 import type {
@@ -20,7 +20,7 @@ import type {
   ConversationSessionInjected, DraftFileUploads,
 } from './contract/slots.ts'
 import type { InputNotice } from './contract/input.ts'
-import type { ReferenceInsert } from './contract/draft-editor.ts'
+import type { ComposerEnterAction, ComposerEnterGesture, ReferenceInsert } from './contract/draft-editor.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import { relativizeToCwd, workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
@@ -91,6 +91,31 @@ const EMPTY_FILE_UPLOADS: DraftFileUploads = {}
 const ABSENT_FILE_UPLOADS = {
   getSnapshot: () => EMPTY_FILE_UPLOADS,
   subscribe: () => () => {},
+}
+
+/**
+ * Enter gestures the composer falls back to when the shortcut catalog has not
+ * resolved its Message input commands (a service-less composition or the first
+ * frame before registration).
+ */
+export const DEFAULT_ENTER_GESTURES: readonly ComposerEnterGesture[] = [
+  { action: 'submit', modifiers: [] },
+  { action: 'newline', modifiers: ['shift'] },
+  { action: 'accelerated', modifiers: ['control'] },
+  { action: 'accelerated', modifiers: ['meta'] },
+]
+
+const ABSENT_ENTER_GESTURES = {
+  getSnapshot: (): readonly ComposerEnterGesture[] => DEFAULT_ENTER_GESTURES,
+  subscribe: () => () => {},
+}
+
+/** Every profile receives the same declared binding. */
+function allProfiles(binding: ShortcutBinding): Readonly<Record<string, ShortcutBinding>> {
+  return {
+    'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding,
+    'web:macos': binding, 'web:windows': binding, 'web:linux': binding,
+  }
 }
 
 /**
@@ -234,16 +259,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     })
   }
   const stopShortcut = createSnapshotStore<readonly string[]>([])
+  const enterGestures = createSnapshotStore<readonly ComposerEnterGesture[]>(DEFAULT_ENTER_GESTURES)
   ctx.inject(['shortcuts'], (scope) => {
     const fixedInputs: readonly ShortcutFixedCommand[] = [
-      { id: 'fixed.send' as ShortcutCommandId, label: () => t('input.send'), keys: ['Enter'],
-        bindings: [{ code: 'Enter', modifiers: [] }], group: 'input' },
-      { id: 'fixed.newline' as ShortcutCommandId, label: () => t('shortcut.newline'),
-        keys: scope.shortcuts.describeBinding({ code: 'Enter', modifiers: ['shift'] }).keys,
-        bindings: [{ code: 'Enter', modifiers: ['shift'] }], group: 'input' },
-      { id: 'fixed.complementary' as ShortcutCommandId, label: () => t('shortcut.complementary'),
-        keys: scope.shortcuts.describeBinding({ code: 'Enter', modifiers: ['primary'] }).keys,
-        bindings: [{ code: 'Enter', modifiers: ['control'] }, { code: 'Enter', modifiers: ['meta'] }], group: 'input' },
       { id: 'fixed.slash' as ShortcutCommandId, label: () => t('shortcut.slash'), keys: ['/'],
         bindings: [{ code: 'Slash', modifiers: [] }], group: 'input' },
       { id: 'fixed.mention' as ShortcutCommandId, label: () => t('shortcut.mention'), keys: ['@'],
@@ -252,6 +270,43 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     for (const command of fixedInputs) {
       scope.effect(() => scope.shortcuts.registerFixed(command), `ui-conversation: ${command.id}`)
     }
+    // The composer editor owns these Enter gestures: registering them as local
+    // commands makes them appear in, and be editable from, the shortcut
+    // reference without the registry ever dispatching them.
+    const enterCommands: readonly {
+      readonly id: ShortcutCommandId
+      readonly action: ComposerEnterAction
+      readonly label: () => string
+      readonly binding: ShortcutBinding
+    }[] = [
+      { id: 'conversation.send' as ShortcutCommandId, action: 'submit', label: () => t('input.send'),
+        binding: { code: 'Enter', modifiers: [] } },
+      { id: 'conversation.newline' as ShortcutCommandId, action: 'newline', label: () => t('shortcut.newline'),
+        binding: { code: 'Enter', modifiers: ['shift'] } },
+      { id: 'conversation.complementary' as ShortcutCommandId, action: 'accelerated', label: () => t('shortcut.complementary'),
+        binding: { code: 'Enter', modifiers: ['primary'] } },
+    ]
+    for (const command of enterCommands) {
+      scope.effect(() => scope.shortcuts.register({
+        id: command.id, label: command.label, aliases: [], group: 'input', local: true,
+        defaults: allProfiles(command.binding), regions: [], modals: [],
+        resolve: () => ({ status: 'pass' }),
+      }), `ui-conversation: ${command.id}`)
+    }
+    scope.effect(() => {
+      const publish = (): void => {
+        const catalog = scope.shortcuts.catalog.getSnapshot()
+        enterGestures.set(enterCommands.flatMap((command) => {
+          const row = catalog.find(candidate => candidate.id === command.id)
+          if (row === undefined) return DEFAULT_ENTER_GESTURES.filter(gesture => gesture.action === command.action)
+          if (row.binding === null || row.issue !== null || row.conflicts.length > 0) return []
+          return [{ action: command.action, modifiers: [...row.binding.modifiers] }]
+        }))
+      }
+      const off = scope.shortcuts.catalog.subscribe(publish)
+      publish()
+      return off
+    }, 'ui-conversation: Message input gestures')
     scope.effect(() => installStopShortcut(
       scope.shortcuts, sessions, binding => uiConversation.binding(binding).openTurn, ctx.uiSession, stop,
     ), 'ui-conversation: fixed stop input')
@@ -444,6 +499,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           hooks: {
             stopShortcut,
             busyEnter: submissionPolicy.busyEnter,
+            enterGestures: ABSENT_ENTER_GESTURES,
             fileUploads: ABSENT_FILE_UPLOADS,
             notices: ABSENT_NOTICES,
             lexicon: ABSENT_LEXICON,
@@ -520,6 +576,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         hooks: {
           stopShortcut,
           busyEnter: submissionPolicy.busyEnter,
+          enterGestures,
           fileUploads: conversation.fileUploads,
           notices: shell.notices,
           lexicon: shell.lexicon,

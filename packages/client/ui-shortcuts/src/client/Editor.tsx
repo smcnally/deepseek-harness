@@ -169,7 +169,7 @@ EditorProps) {
         onBlur={() => { restart.current() }}
         aria-label={t('record')} aria-invalid={message !== ''} aria-describedby={descriptionId}
         onClick={() => { if (!writing.current) { restart.current(); setCaptured(false); setMessage(''); setRetry(null) } }}>
-        {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate).keys} className={css.recorded} /> : t('record')}
+        {captured && message === '' ? <ShortcutKeys keys={describeBinding(candidate, targetId).keys} className={css.recorded} /> : t('record')}
       </button>
     </div>
     <span id={descriptionId} className={css.srOnly}>{message || (desktopChords ? '' : t(runtime === 'web'

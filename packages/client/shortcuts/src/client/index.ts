@@ -105,11 +105,13 @@ export default class ShortcutsService extends Service implements Shortcuts {
     }
   }
 
-  describeBinding(binding: Parameters<Shortcuts['describeBinding']>[0]): ReturnType<Shortcuts['describeBinding']> {
+  describeBinding(binding: Parameters<Shortcuts['describeBinding']>[0],
+    command?: Parameters<Shortcuts['describeBinding']>[1]): ReturnType<Shortcuts['describeBinding']> {
     const normalized = binding === null ? null : normalizeBinding(binding, this.platform)
+    const local = command !== undefined && this.registry.isLocal(command)
     return { binding: normalized,
       keys: presentBinding(normalized, this.platform).keys,
-      issue: normalized === null ? null : bindingIssue(normalized, this.runtime, this.platform),
+      issue: normalized === null ? null : bindingIssue(normalized, this.runtime, this.platform, local),
       conflicts: normalized === null ? [] : [...this.catalog.getSnapshot().filter(row => row.binding !== null
         && overlappingBindings(row.binding, normalized)).map(row => row.id),
       ...this.fixedCatalog.getSnapshot().filter(row => row.bindings.some(binding => overlappingBindings(binding, normalized)))

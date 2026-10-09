@@ -19,6 +19,33 @@ it.each(['macos', 'windows', 'linux'] as const)('accepts Mod+Shift+Period on %s 
 it('reserves the macOS Web control-command combination', () => {
   expect(bindingIssue({ code: 'KeyB', modifiers: ['control', 'meta'] }, 'web', 'macos')).toBe('reserved')
 })
+it('admits only Enter combinations for a command its owning editor receives', () => {
+  const sets: readonly (readonly ('primary' | 'shift')[])[] = [[], ['shift'], ['primary'], ['primary', 'shift']]
+  for (const platform of ['macos', 'windows', 'linux'] as const) {
+    for (const modifiers of sets) {
+      expect(bindingIssue(normalizeBinding({ code: 'Enter', modifiers }, platform), 'web', platform, true)).toBeNull()
+    }
+    expect(bindingIssue(normalizeBinding(primary('KeyJ'), platform), 'web', platform, true)).toBe('enter-only')
+    expect(bindingIssue(normalizeBinding({ code: 'Enter', secondCode: 'KeyJ', modifiers: [] }, platform), 'web', platform, true)).toBe('enter-only')
+    // The same combination stays refused for a command the registry dispatches.
+    expect(bindingIssue(normalizeBinding({ code: 'Enter', modifiers: [] }, platform), 'web', platform)).toBe('modifier-required')
+  }
+})
+it('accepts a local definition and refuses a reserved pairing or an unreachable default', () => {
+  const local: ShortcutDefinition = { id: id('conversation.send'), local: true, defaults: {
+    'desktop:macos': { code: 'Enter', modifiers: [] }, 'desktop:windows': { code: 'Enter', modifiers: [] },
+    'desktop:linux': { code: 'Enter', modifiers: [] }, 'web:macos': { code: 'Enter', modifiers: [] },
+    'web:windows': { code: 'Enter', modifiers: [] }, 'web:linux': { code: 'Enter', modifiers: [] },
+  } }
+  expect(parseShortcutDefinitions([local])).toEqual([local])
+  expect(effectiveShortcuts([local], { schemaVersion: 1, profiles: {} }, 'web', 'linux'))
+    .toEqual([{ id: 'conversation.send', binding: { code: 'Enter', modifiers: [] }, modified: false, issue: null, conflicts: [] }])
+  for (const value of [
+    { ...local, local: 'yes' },
+    { ...local, fixed: [{ code: 'Enter', modifiers: [] }] },
+    { ...local, defaults: { 'web:linux': primary('KeyJ') } },
+  ]) expect(() => parseShortcutDefinitions([value])).toThrow()
+})
 const primary = (code: string) => ({ code, modifiers: ['primary'] as const })
 const definitions: readonly ShortcutDefinition[] = [
   { id: id('test.one'), defaults: {

@@ -212,3 +212,25 @@ it.each(['macos', 'windows'] as const)('keeps %s priority identical before savin
   }
   expect(run).toHaveBeenCalledTimes(18)
 })
+
+it('keeps a local command out of dispatch and refuses a declared dispatch region', () => {
+  const registry = new ShortcutRegistry('web', 'linux')
+  const run = vi.fn()
+  const local: ShortcutCommand = {
+    id: 'conversation.send' as ShortcutCommandId, label: () => 'Send message', aliases: [], group: 'input', local: true,
+    defaults: { 'web:linux': { code: 'Enter', modifiers: [] } }, regions: [], modals: [],
+    resolve: () => ({ status: 'handled', run }),
+  }
+  registry.register(local)
+  expect(registry.definitions()).toEqual([{
+    id: 'conversation.send', defaults: { 'web:linux': { code: 'Enter', modifiers: [] } }, local: true,
+  }])
+  expect(registry.catalog.getSnapshot()).toMatchObject([
+    { id: 'conversation.send', group: 'input', keys: ['Enter'], issue: null },
+  ])
+  // The owning editor receives the keys; the registry must not run the command.
+  expect(registry.dispatch({ ...gesture, code: 'Enter', meta: false }, context, vi.fn())).toEqual({ status: 'pass' })
+  expect(run).not.toHaveBeenCalled()
+  expect(() => registry.register({ ...local, id: 'conversation.other' as ShortcutCommandId, regions: ['page'] }))
+    .toThrow('dispatch region')
+})

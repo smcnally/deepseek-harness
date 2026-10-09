@@ -1,7 +1,7 @@
 /** DOM and keymap bindings installed by the InputBar's existing effects. */
 import type { MouseEvent, MutableRefObject, RefObject } from 'react'
 import type { LexicalEditor } from 'lexical'
-import type { ComposerKeyboard } from '../../contract/draft-editor.ts'
+import type { ComposerEnterGesture, ComposerKeyboard } from '../../contract/draft-editor.ts'
 import type { ComposerBarProps } from '../../contract/slots.ts'
 import type { BusyEnterBehavior } from '../../contract/composer-submission.ts'
 import { resolveSubmitMode } from '../submission-policy.ts'
@@ -14,11 +14,17 @@ interface DraftViewGate {
   running: boolean
   steeringAvailable: boolean
   busyEnter: BusyEnterBehavior
+  enterGestures: readonly ComposerEnterGesture[]
   intakeFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void
   uploadsPending: boolean
   showToast: (text: string) => void
   t: ComposerBarProps['t']
   canAcceptDrop: boolean
+}
+
+/** Compare two normalized modifier lists by value and order. */
+function sameModifiers(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 /**
@@ -115,6 +121,8 @@ export function installDraftKeymap(
       return keyboard.space()
     },
     dismissPopup: () => { keyboard.dismissPopup() },
+    enterAction: modifiers => gate.current.enterGestures
+      .find(gesture => sameModifiers(gesture.modifiers, modifiers))?.action ?? null,
     canSubmit: () => !gate.current.locked && !gate.current.machineBusy,
     submit: (accelerated) => {
       const g = gate.current
